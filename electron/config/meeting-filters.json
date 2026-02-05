@@ -1,0 +1,4 @@
+{
+  "excludePatterns": ["Lunch", "Focus Time"],
+  "description": "Meetings containing any of these patterns (case-insensitive) will be excluded from sync"
+}
