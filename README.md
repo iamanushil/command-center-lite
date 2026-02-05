@@ -4,6 +4,8 @@ A lightweight personal dashboard for your day. Shows your morning briefing, task
 
 Built with Electron, React, TypeScript, and Vite.
 
+![Screenshot of Command Center Lite showing the afternoon briefing with a personalized greeting, a task list with prioritized items, and a list of upcoming meetings for the day](public/screenshot.png)
+
 ## Features
 
 - **Morning Briefing** - Get a personalized greeting and overview of your day
