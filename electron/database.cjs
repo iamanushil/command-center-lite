@@ -182,6 +182,12 @@ function initDatabase() {
 
     -- Index for blocked meeting patterns
     CREATE INDEX IF NOT EXISTS idx_blocked_patterns_pattern ON blocked_meeting_patterns(pattern);
+
+    CREATE TABLE IF NOT EXISTS dismissed_calendar_meetings (
+      external_id TEXT PRIMARY KEY,
+      title TEXT,
+      dismissed_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
   `);
   
   // Run migrations to add new columns to existing tables
@@ -725,7 +731,7 @@ function getSyncPriority() {
 function getAllMeetings() {
   const db = getDb();
   return db.prepare(`
-    SELECT id, title, date, time, category, done, notes, link
+    SELECT id, title, date, time, category, done, notes, link, source, external_id as externalId, calendar_name as calendarName
     FROM meetings
     ORDER BY date ASC, time ASC
   `).all().map(m => ({ ...m, done: Boolean(m.done) }));
@@ -735,7 +741,7 @@ function getTodayMeetings() {
   const db = getDb();
   const today = new Date().toISOString().split('T')[0];
   return db.prepare(`
-    SELECT id, title, date, time, category, done, notes, link
+    SELECT id, title, date, time, category, done, notes, link, source, external_id as externalId, calendar_name as calendarName
     FROM meetings
     WHERE date = ?
     ORDER BY time ASC
@@ -745,7 +751,7 @@ function getTodayMeetings() {
 function getMeetingsByDate(dateString) {
   const db = getDb();
   return db.prepare(`
-    SELECT id, title, date, time, category, done, notes, link
+    SELECT id, title, date, time, category, done, notes, link, source, external_id as externalId, calendar_name as calendarName
     FROM meetings
     WHERE date = ?
     ORDER BY time ASC
@@ -759,11 +765,11 @@ function createMeeting(meeting) {
   const externalId = meeting.externalId || null;
   
   db.prepare(`
-    INSERT INTO meetings (id, title, date, time, category, done, notes, link, source, external_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, meeting.title, meeting.date, meeting.time, meeting.category, meeting.done ? 1 : 0, meeting.notes || null, meeting.link || null, source, externalId);
-  
-  return { id, title: meeting.title, date: meeting.date, time: meeting.time, category: meeting.category, done: Boolean(meeting.done), notes: meeting.notes, link: meeting.link, source, externalId };
+    INSERT INTO meetings (id, title, date, time, category, done, notes, link, source, external_id, calendar_name)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, meeting.title, meeting.date, meeting.time, meeting.category, meeting.done ? 1 : 0, meeting.notes || null, meeting.link || null, source, externalId, meeting.calendarName || null);
+
+  return { id, title: meeting.title, date: meeting.date, time: meeting.time, category: meeting.category, done: Boolean(meeting.done), notes: meeting.notes, link: meeting.link, source, externalId, calendarName: meeting.calendarName || null };
 }
 
 function updateMeeting(id, updates) {
@@ -805,7 +811,7 @@ function updateMeeting(id, updates) {
   values.push(id);
   db.prepare(`UPDATE meetings SET ${fields.join(', ')} WHERE id = ?`).run(...values);
   
-  const result = db.prepare('SELECT id, title, date, time, category, done, notes, link FROM meetings WHERE id = ?').get(id);
+  const result = db.prepare('SELECT id, title, date, time, category, done, notes, link, source, external_id as externalId, calendar_name as calendarName FROM meetings WHERE id = ?').get(id);
   return result ? { ...result, done: Boolean(result.done) } : null;
 }
 
@@ -822,7 +828,7 @@ function toggleMeeting(id) {
   
   db.prepare('UPDATE meetings SET done = ? WHERE id = ?').run(meeting.done ? 0 : 1, id);
   
-  const result = db.prepare('SELECT id, title, date, time, category, done, notes, link FROM meetings WHERE id = ?').get(id);
+  const result = db.prepare('SELECT id, title, date, time, category, done, notes, link, source, external_id as externalId, calendar_name as calendarName FROM meetings WHERE id = ?').get(id);
   return result ? { ...result, done: Boolean(result.done) } : null;
 }
 
@@ -860,10 +866,28 @@ function removeBlockedMeetingPattern(id) {
 function getMeetingByExternalId(externalId) {
   const db = getDb();
   return db.prepare(`
-    SELECT id, title, date, time, category, done, notes, link, source, external_id as externalId
+    SELECT id, title, date, time, category, done, notes, link, source, external_id as externalId, calendar_name as calendarName
     FROM meetings
     WHERE external_id = ?
   `).get(externalId);
+}
+
+function getMeetingById(id) {
+  const db = getDb();
+  return db.prepare('SELECT id, title, source, external_id as externalId FROM meetings WHERE id = ?').get(id) || null;
+}
+
+function dismissCalendarMeeting(externalId, title) {
+  const db = getDb();
+  db.prepare(`
+    INSERT OR IGNORE INTO dismissed_calendar_meetings (external_id, title)
+    VALUES (?, ?)
+  `).run(externalId, title || null);
+}
+
+function isCalendarMeetingDismissed(externalId) {
+  const db = getDb();
+  return !!db.prepare('SELECT 1 FROM dismissed_calendar_meetings WHERE external_id = ?').get(externalId);
 }
 
 function getMeetingsBySource(source) {
@@ -1414,19 +1438,26 @@ function getSubtaskSummaries(taskIds) {
 function seedInitialData() {
   const db = getDb();
   
-  // Check if there are any tasks
-  const taskCount = db.prepare('SELECT COUNT(*) as count FROM tasks').get().count;
-  
-  if (taskCount === 0) {
+  // Seed only once — check a persistent flag, not task count
+  // (user may delete all tasks intentionally)
+  const seeded = db.prepare("SELECT COUNT(*) as count FROM sqlite_master WHERE type='table' AND name='_seed_flags'").get().count;
+  if (!seeded) {
+    db.exec('CREATE TABLE _seed_flags (key TEXT PRIMARY KEY, value TEXT)');
+  }
+  const alreadySeeded = db.prepare("SELECT value FROM _seed_flags WHERE key='initial_seed'").get();
+  if (!alreadySeeded) {
+    db.prepare("INSERT INTO _seed_flags (key, value) VALUES ('initial_seed', 'done')").run();
     const now = new Date().toISOString();
     const today = new Date().toISOString().split('T')[0];
     
     // Seed some initial tasks
     const initialTasks = [
-      { title: 'Review PR for authentication changes', category: 'work', status: 'todo' },
-      { title: 'Update documentation for API endpoints', category: 'work', status: 'in-progress' },
-      { title: 'Grocery shopping', category: 'home', status: 'todo' },
-      { title: 'Work on side project feature', category: 'side-project', status: 'todo' },
+      { title: 'Review billing-platform PR #892', category: 'work', status: 'todo' },
+      { title: 'Update Universe demo script', category: 'work', status: 'todo' },
+      { title: 'Schedule dentist appointment', category: 'home', status: 'todo' },
+      { title: 'Check Collective deployment', category: 'side-project', status: 'todo' },
+      { title: 'Write blog post draft', category: 'side-project', status: 'in-progress' },
+      { title: 'Meal prep for the week', category: 'home', status: 'todo' },
     ];
     
     const insertTask = db.prepare(`
@@ -1492,7 +1523,10 @@ module.exports = {
   updateMeeting,
   deleteMeeting,
   toggleMeeting,
+  getMeetingById,
   getMeetingByExternalId,
+  dismissCalendarMeeting,
+  isCalendarMeetingDismissed,
   getMeetingsBySource,
   
   // Blocked meeting patterns

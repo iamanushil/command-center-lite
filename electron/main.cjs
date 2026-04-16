@@ -14,7 +14,7 @@ app.commandLine.appendSwitch('disable-software-rasterizer');
 const github = require('./integrations/github.cjs');
 const fileReader = require('./integrations/fileReader.cjs');
 const elevenlabs = require('./integrations/elevenlabs.cjs');
-const workiq = require('./integrations/workiq.cjs');
+const calendar = require('./integrations/applecalendar.cjs');
 
 // Writing folder path (relative to Notes folder in workspace)
 const WRITING_FOLDER = path.join(process.env.HOME || '', 'Documents', 'Notes', 'projects', 'writing');
@@ -66,7 +66,17 @@ app.whenReady().then(() => {
   }
   
   createWindow();
-  checkWorkiqAvailability();
+  checkCalendarAvailability();
+
+  // Auto-sync today's calendar events after window loads
+  if (mainWindow) {
+    mainWindow.webContents.once('did-finish-load', () => {
+      setTimeout(() => syncCalendarMeetings(), 2000);
+    });
+  }
+
+  // Re-sync every hour so new events appear without restart
+  setInterval(() => syncCalendarMeetings(), 60 * 60 * 1000);
 });
 
 // ============================================
@@ -368,6 +378,11 @@ ipcMain.handle('db:meetings:update', (_event, id, updates) => {
 });
 
 ipcMain.handle('db:meetings:delete', (_event, id) => {
+  // If calendar meeting, dismiss it so auto-sync doesn't re-add it
+  const meeting = database.getMeetingById ? database.getMeetingById(id) : null;
+  if (meeting?.source === 'calendar' && meeting?.externalId) {
+    database.dismissCalendarMeeting(meeting.externalId, meeting.title);
+  }
   return database.deleteMeeting(id);
 });
 
@@ -949,116 +964,110 @@ ipcMain.handle('elevenlabs:getVoices', async () => {
 });
 
 // ============================================
-// WORKIQ (COPILOT CLI) IPC HANDLERS
+// APPLE CALENDAR IPC HANDLERS
 // ============================================
 
-// Check if WorkIQ CLI is available
-ipcMain.handle('workiq:isAvailable', async () => {
-  return workiq.isWorkiqAvailable();
+// Check if Apple Calendar is available (macOS only)
+ipcMain.handle('calendar:isAvailable', async () => {
+  return calendar.isCalendarAvailable();
 });
 
-// Fetch today's meetings from calendar
-ipcMain.handle('workiq:fetchTodaysMeetings', async () => {
-  return workiq.fetchTodaysMeetings();
+// Fetch today's meetings from Apple Calendar
+ipcMain.handle('calendar:fetchTodaysMeetings', async () => {
+  return calendar.fetchTodaysMeetings();
 });
 
-// Fetch this week's meetings from calendar
-ipcMain.handle('workiq:fetchWeekMeetings', async () => {
-  return workiq.fetchWeekMeetings();
+// Fetch this week's meetings from Apple Calendar
+ipcMain.handle('calendar:fetchWeekMeetings', async () => {
+  return calendar.fetchWeekMeetings();
 });
 
-// Sync meetings from WorkIQ to database (today)
-ipcMain.handle('workiq:syncMeetings', async () => {
-  return syncWorkiqMeetings();
+// Sync meetings from Apple Calendar to database (today)
+ipcMain.handle('calendar:syncMeetings', async () => {
+  return syncCalendarMeetings();
 });
 
-// Sync meetings from WorkIQ for a specific date
-ipcMain.handle('workiq:syncMeetingsForDate', async (_event, dateString) => {
-  return syncWorkiqMeetingsForDate(dateString);
+// Sync meetings from Apple Calendar for a specific date
+ipcMain.handle('calendar:syncMeetingsForDate', async (_event, dateString) => {
+  return syncCalendarMeetingsForDate(dateString);
 });
 
-// Fetch meetings from WorkIQ for selection (returns meetings without adding to database)
-ipcMain.handle('workiq:fetchMeetingsForSelection', async (_event, dateString) => {
-  return fetchWorkiqMeetingsForSelection(dateString);
+// Fetch meetings from Apple Calendar for selection (returns meetings without adding to database)
+ipcMain.handle('calendar:fetchMeetingsForSelection', async (_event, dateString) => {
+  return fetchCalendarMeetingsForSelection(dateString);
 });
 
 // Add selected meetings to database
-ipcMain.handle('workiq:addSelectedMeetings', async (_event, meetings) => {
+ipcMain.handle('calendar:addSelectedMeetings', async (_event, meetings) => {
   return addSelectedMeetings(meetings);
 });
 
 // Get blocked meeting patterns
-ipcMain.handle('workiq:getBlockedPatterns', async () => {
+ipcMain.handle('calendar:getBlockedPatterns', async () => {
   return database.getBlockedMeetingPatterns();
 });
 
 // Add a blocked meeting pattern
-ipcMain.handle('workiq:addBlockedPattern', async (_event, pattern, isRegex = false) => {
+ipcMain.handle('calendar:addBlockedPattern', async (_event, pattern, isRegex = false) => {
   return database.addBlockedMeetingPattern(pattern, isRegex);
 });
 
 // Remove a blocked meeting pattern
-ipcMain.handle('workiq:removeBlockedPattern', async (_event, id) => {
+ipcMain.handle('calendar:removeBlockedPattern', async (_event, id) => {
   return database.removeBlockedMeetingPattern(id);
 });
 
 // Block a specific meeting by title (creates a pattern from the title)
-ipcMain.handle('workiq:blockMeetingByTitle', async (_event, title) => {
-  // Use the exact title as a pattern (case-insensitive match)
+ipcMain.handle('calendar:blockMeetingByTitle', async (_event, title) => {
   return database.addBlockedMeetingPattern(title, false);
 });
 
 // ============================================
-// WORKIQ SYNC FUNCTIONS
+// APPLE CALENDAR SYNC FUNCTIONS
 // ============================================
 
-/**
- * Sync meetings from WorkIQ to the database
- * This fetches today's and this week's meetings and adds any new ones
- */
-async function syncWorkiqMeetings() {
-  return syncWorkiqMeetingsForDate(null); // null means today
+async function syncCalendarMeetings() {
+  return syncCalendarMeetingsForDate(null); // null means today
 }
 
-async function syncWorkiqMeetingsForDate(dateString = null) {
+async function syncCalendarMeetingsForDate(dateString = null) {
   try {
-    const isAvailable = await workiq.isWorkiqAvailable();
+    const isAvailable = await calendar.isCalendarAvailable();
     if (!isAvailable) {
-      console.log('[WorkIQ] CLI not available, skipping sync');
-      return { success: false, error: 'WorkIQ CLI not available', synced: 0 };
+      console.log('[Calendar] Not available (non-macOS?), skipping sync');
+      return { success: false, error: 'Apple Calendar not available', synced: 0 };
     }
 
-    // Parse the date or use today
     const targetDate = dateString ? new Date(dateString + 'T12:00:00') : new Date();
     const dateLabel = dateString || 'today';
-    
-    console.log(`[WorkIQ] Starting meeting sync for ${dateLabel}...`);
-    
-    // Get blocked patterns
+
+    console.log(`[Calendar] Starting sync for ${dateLabel}...`);
+
     const blockedPatterns = database.getBlockedMeetingPatterns();
-    console.log(`[WorkIQ] Found ${blockedPatterns.length} blocked patterns`);
-    
-    // Fetch meetings for the specified date
-    const meetings = await workiq.fetchMeetingsForDateRange(targetDate, targetDate);
-    console.log(`[WorkIQ] Fetched ${meetings.length} meetings from calendar for ${dateLabel}`);
-    
+    console.log(`[Calendar] Blocked patterns: ${blockedPatterns.length}`);
+
+    const meetings = await calendar.fetchMeetingsForDateRange(targetDate, targetDate);
+    console.log(`[Calendar] Fetched ${meetings.length} events for ${dateLabel}`);
+
     let syncedCount = 0;
     let skippedCount = 0;
     let blockedCount = 0;
     let updatedCount = 0;
-    
+
     for (const meeting of meetings) {
-      // Check if meeting is blocked
-      if (workiq.isMeetingBlocked(meeting.title, blockedPatterns)) {
+      if (calendar.isMeetingBlocked(meeting.title, blockedPatterns)) {
         blockedCount++;
-        console.log(`[WorkIQ] Skipping blocked meeting: ${meeting.title}`);
+        console.log(`[Calendar] Skipping blocked: ${meeting.title}`);
         continue;
       }
-      
-      // Check if meeting already exists by external ID
+
+      if (database.isCalendarMeetingDismissed(meeting.externalId)) {
+        console.log(`[Calendar] Skipping dismissed: ${meeting.title}`);
+        continue;
+      }
+
       const existing = database.getMeetingByExternalId(meeting.externalId);
       if (existing) {
-        // Check if time or title changed - if so, update the meeting
         if (existing.time !== meeting.time || existing.title !== meeting.title || existing.link !== meeting.link) {
           database.updateMeeting(existing.id, {
             time: meeting.time,
@@ -1066,73 +1075,65 @@ async function syncWorkiqMeetingsForDate(dateString = null) {
             link: meeting.link,
           });
           updatedCount++;
-          console.log(`[WorkIQ] Updated meeting: ${meeting.title} (time: ${existing.time} -> ${meeting.time})`);
+          console.log(`[Calendar] Updated: ${meeting.title} (${existing.time} → ${meeting.time})`);
         } else {
           skippedCount++;
         }
         continue;
       }
-      
-      // Create the meeting
+
       database.createMeeting({
         title: meeting.title,
         date: meeting.date,
         time: meeting.time,
-        category: 'work', // Default to work category for calendar meetings
+        category: 'work',
         done: false,
         link: meeting.link,
-        source: 'workiq',
+        source: 'calendar',
         externalId: meeting.externalId,
+        calendarName: meeting.calendarName || null,
       });
-      
+
       syncedCount++;
-      console.log(`[WorkIQ] Synced meeting: ${meeting.title} at ${meeting.time}`);
+      console.log(`[Calendar] Synced: ${meeting.title} at ${meeting.time}`);
     }
-    
-    console.log(`[WorkIQ] Sync complete. New: ${syncedCount}, Updated: ${updatedCount}, Skipped (unchanged): ${skippedCount}, Blocked: ${blockedCount}`);
-    
-    // Notify renderer of the sync
+
+    console.log(`[Calendar] Done. New: ${syncedCount}, Updated: ${updatedCount}, Skipped: ${skippedCount}, Blocked: ${blockedCount}`);
+
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('workiq:syncComplete', { syncedCount, updatedCount, skippedCount, blockedCount });
+      mainWindow.webContents.send('calendar:syncComplete', { syncedCount, updatedCount, skippedCount, blockedCount });
     }
-    
+
     return { success: true, synced: syncedCount, updated: updatedCount, skipped: skippedCount, blocked: blockedCount };
   } catch (error) {
-    console.error('[WorkIQ] Sync error:', error);
+    console.error('[Calendar] Sync error:', error);
     return { success: false, error: error.message, synced: 0 };
   }
 }
 
 /**
- * Fetch meetings from WorkIQ for user selection (doesn't add to database)
- * Returns the meetings with their status (new, existing, blocked)
+ * Fetch meetings from Apple Calendar for user selection (doesn't add to database).
+ * Returns meetings annotated with status: new | existing | blocked
  */
-async function fetchWorkiqMeetingsForSelection(dateString = null) {
+async function fetchCalendarMeetingsForSelection(dateString = null) {
   try {
-    const isAvailable = await workiq.isWorkiqAvailable();
+    const isAvailable = await calendar.isCalendarAvailable();
     if (!isAvailable) {
-      console.log('[WorkIQ] CLI not available');
-      return { success: false, error: 'WorkIQ CLI not available', meetings: [] };
+      return { success: false, error: 'Apple Calendar not available', meetings: [] };
     }
 
-    // Parse the date or use today
     const targetDate = dateString ? new Date(dateString + 'T12:00:00') : new Date();
     const dateLabel = dateString || 'today';
-    
-    console.log(`[WorkIQ] Fetching meetings for selection for ${dateLabel}...`);
-    
-    // Get blocked patterns
+
+    console.log(`[Calendar] Fetching for selection: ${dateLabel}...`);
+
     const blockedPatterns = database.getBlockedMeetingPatterns();
-    
-    // Fetch meetings for the specified date
-    const meetings = await workiq.fetchMeetingsForDateRange(targetDate, targetDate);
-    console.log(`[WorkIQ] Fetched ${meetings.length} meetings from calendar`);
-    
-    // Annotate each meeting with its status
+    const meetings = await calendar.fetchMeetingsForDateRange(targetDate, targetDate);
+    console.log(`[Calendar] Fetched ${meetings.length} events`);
+
     const annotatedMeetings = meetings.map(meeting => {
-      const isBlocked = workiq.isMeetingBlocked(meeting.title, blockedPatterns);
+      const isBlocked = calendar.isMeetingBlocked(meeting.title, blockedPatterns);
       const existing = database.getMeetingByExternalId(meeting.externalId);
-      
       return {
         ...meeting,
         status: isBlocked ? 'blocked' : existing ? 'existing' : 'new',
@@ -1141,10 +1142,10 @@ async function fetchWorkiqMeetingsForSelection(dateString = null) {
         hasTimeChanged: existing ? existing.time !== meeting.time : false,
       };
     });
-    
+
     return { success: true, meetings: annotatedMeetings, date: dateString || new Date().toISOString().split('T')[0] };
   } catch (error) {
-    console.error('[WorkIQ] Fetch error:', error);
+    console.error('[Calendar] Fetch error:', error);
     return { success: false, error: error.message, meetings: [] };
   }
 }
@@ -1180,33 +1181,30 @@ async function addSelectedMeetings(meetings) {
           category: 'work',
           done: false,
           link: meeting.link,
-          source: 'workiq',
+          source: 'calendar',
           externalId: meeting.externalId,
         });
         addedCount++;
       }
     }
-    
-    console.log(`[WorkIQ] Added ${addedCount} new meetings, updated ${updatedCount}`);
+
+    console.log(`[Calendar] Added ${addedCount} new meetings, updated ${updatedCount}`);
     return { success: true, added: addedCount, updated: updatedCount };
   } catch (error) {
-    console.error('[WorkIQ] Add meetings error:', error);
+    console.error('[Calendar] Add meetings error:', error);
     return { success: false, error: error.message };
   }
 }
 
 /**
- * Check if WorkIQ CLI is available (called on startup for logging)
+ * Check if Apple Calendar is available (called on startup for logging)
  */
-async function checkWorkiqAvailability() {
-  const isAvailable = await workiq.isWorkiqAvailable();
-  
+async function checkCalendarAvailability() {
+  const isAvailable = await calendar.isCalendarAvailable();
   if (!isAvailable) {
-    console.log('[WorkIQ] CLI not found. Calendar sync disabled.');
-    console.log('[WorkIQ] To enable calendar sync, install the WorkIQ/M365 Copilot CLI.');
+    console.log('[Calendar] Apple Calendar not available (non-macOS?).');
   } else {
-    console.log('[WorkIQ] CLI available. Use Sync button to fetch calendar meetings on demand.');
+    console.log('[Calendar] Apple Calendar available. Use Sync button to fetch events on demand.');
   }
-  
   return isAvailable;
 }

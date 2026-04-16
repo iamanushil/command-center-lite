@@ -43,7 +43,7 @@ export interface Task {
 }
 
 // Meeting source types
-export type MeetingSource = 'local' | 'workiq';
+export type MeetingSource = 'local' | 'calendar';
 
 // Meeting (manual entry or synced from calendar)
 export interface Meeting {
@@ -57,6 +57,7 @@ export interface Meeting {
   link?: string; // Meeting link (Zoom, Teams, etc.)
   source?: MeetingSource; // Where the meeting came from
   externalId?: string; // External ID for synced meetings
+  calendarName?: string; // Calendar name (email) for calendar-synced meetings
 }
 
 // Blocked meeting pattern for filtering calendar sync

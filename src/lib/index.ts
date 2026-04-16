@@ -11,13 +11,13 @@ export {
 export { isElectron, getAppVersion, getPlatform, fs, onMainMessage } from './electron'
 export * as db from './db'
 export { isDatabaseAvailable, getDatabasePath } from './db'
-export * as workiq from './workiq'
+export * as calendar from './workiq'
 export {
   isWorkiqAvailable,
-  syncMeetings as workiqSyncMeetings,
+  syncMeetings as calendarSyncMeetings,
   blockMeetingTitle,
   getBlockedPatterns,
   removeBlockedPattern,
-  onSyncComplete as onWorkiqSyncComplete,
-  removeSyncCompleteListener as removeWorkiqSyncCompleteListener,
+  onSyncComplete as onCalendarSyncComplete,
+  removeSyncCompleteListener as removeCalendarSyncCompleteListener,
 } from './workiq'

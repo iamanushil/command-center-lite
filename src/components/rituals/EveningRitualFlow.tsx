@@ -276,7 +276,7 @@ export function EveningRitualFlow({
                 <button
                   onClick={async () => {
                     const api = getElectronAPI();
-                    if (!api?.workiq) return;
+                    if (!api?.calendar) return;
                     setIsSyncingMeetings(true);
                     try {
                       // Get tomorrow's date string
@@ -288,12 +288,12 @@ export function EveningRitualFlow({
                       const tomorrowStr = `${year}-${month}-${day}`;
                       
                       // Fetch and auto-add all new meetings for evening ritual (simpler flow)
-                      const result = await api.workiq.fetchMeetingsForSelection(tomorrowStr);
+                      const result = await api.calendar.fetchMeetingsForSelection(tomorrowStr);
                       if (result.success && result.meetings.length > 0) {
                         // Auto-add new meetings only
                         const newMeetings = result.meetings.filter(m => m.status === 'new');
                         if (newMeetings.length > 0) {
-                          await api.workiq.addSelectedMeetings(newMeetings.map(m => ({
+                          await api.calendar.addSelectedMeetings(newMeetings.map(m => ({
                             title: m.title,
                             date: m.date,
                             time: m.time,

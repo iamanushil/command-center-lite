@@ -76,7 +76,7 @@ export function Meetings({
 
   const handleSyncForDate = async () => {
     const api = getElectronAPI()
-    if (!api?.workiq) return
+    if (!api?.calendar) return
     
     setIsSyncing(true)
     setSyncModalDate(selectedDateString)
@@ -84,7 +84,7 @@ export function Meetings({
     setIsSyncModalOpen(true)
     
     try {
-      const result = await api.workiq.fetchMeetingsForSelection(selectedDateString)
+      const result = await api.calendar.fetchMeetingsForSelection(selectedDateString)
       console.log(`[Meetings] Fetched meetings for ${selectedDateString}:`, result)
       if (result.success) {
         setFetchedMeetings(result.meetings)
@@ -98,9 +98,9 @@ export function Meetings({
 
   const handleAddSelectedMeetings = async (meetingsToAdd: FetchedMeeting[]) => {
     const api = getElectronAPI()
-    if (!api?.workiq) return
+    if (!api?.calendar) return
     
-    const result = await api.workiq.addSelectedMeetings(meetingsToAdd.map(m => ({
+    const result = await api.calendar.addSelectedMeetings(meetingsToAdd.map(m => ({
       title: m.title,
       date: m.date,
       time: m.time,
@@ -253,9 +253,15 @@ export function Meetings({
                 >
                   {meeting.title}
                 </span>
-                <Badge color={getCategoryBadgeColor(meeting.category)}>
-                  {meeting.category}
-                </Badge>
+                {meeting.source === 'calendar' && meeting.calendarName ? (
+                  <Badge color="blue">
+                    {meeting.calendarName.replace('@gmail.com', '').replace('@digiicampus.com', '@digii')}
+                  </Badge>
+                ) : (
+                  <Badge color={getCategoryBadgeColor(meeting.category)}>
+                    {meeting.category}
+                  </Badge>
+                )}
                 {meeting.notes && (
                   <span className="text-xs text-overlay1" title="Has notes">📝</span>
                 )}

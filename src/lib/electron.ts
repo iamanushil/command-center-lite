@@ -227,7 +227,7 @@ export interface ElectronAPI {
       error?: string
     }>
   }
-  workiq: {
+  calendar: {
     isAvailable: () => Promise<boolean>
     fetchTodaysMeetings: () => Promise<Array<{
       title: string

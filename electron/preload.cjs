@@ -254,24 +254,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getVoices: () => ipcRenderer.invoke('elevenlabs:getVoices'),
   },
 
-  // WorkIQ (Copilot CLI) for calendar sync
-  workiq: {
-    isAvailable: () => ipcRenderer.invoke('workiq:isAvailable'),
-    fetchTodaysMeetings: () => ipcRenderer.invoke('workiq:fetchTodaysMeetings'),
-    fetchWeekMeetings: () => ipcRenderer.invoke('workiq:fetchWeekMeetings'),
-    syncMeetings: () => ipcRenderer.invoke('workiq:syncMeetings'),
-    syncMeetingsForDate: (dateString) => ipcRenderer.invoke('workiq:syncMeetingsForDate', dateString),
-    fetchMeetingsForSelection: (dateString) => ipcRenderer.invoke('workiq:fetchMeetingsForSelection', dateString),
-    addSelectedMeetings: (meetings) => ipcRenderer.invoke('workiq:addSelectedMeetings', meetings),
-    getBlockedPatterns: () => ipcRenderer.invoke('workiq:getBlockedPatterns'),
-    addBlockedPattern: (pattern, isRegex) => ipcRenderer.invoke('workiq:addBlockedPattern', pattern, isRegex),
-    removeBlockedPattern: (id) => ipcRenderer.invoke('workiq:removeBlockedPattern', id),
-    blockMeetingByTitle: (title) => ipcRenderer.invoke('workiq:blockMeetingByTitle', title),
+  // Apple Calendar sync
+  calendar: {
+    isAvailable: () => ipcRenderer.invoke('calendar:isAvailable'),
+    fetchTodaysMeetings: () => ipcRenderer.invoke('calendar:fetchTodaysMeetings'),
+    fetchWeekMeetings: () => ipcRenderer.invoke('calendar:fetchWeekMeetings'),
+    syncMeetings: () => ipcRenderer.invoke('calendar:syncMeetings'),
+    syncMeetingsForDate: (dateString) => ipcRenderer.invoke('calendar:syncMeetingsForDate', dateString),
+    fetchMeetingsForSelection: (dateString) => ipcRenderer.invoke('calendar:fetchMeetingsForSelection', dateString),
+    addSelectedMeetings: (meetings) => ipcRenderer.invoke('calendar:addSelectedMeetings', meetings),
+    getBlockedPatterns: () => ipcRenderer.invoke('calendar:getBlockedPatterns'),
+    addBlockedPattern: (pattern, isRegex) => ipcRenderer.invoke('calendar:addBlockedPattern', pattern, isRegex),
+    removeBlockedPattern: (id) => ipcRenderer.invoke('calendar:removeBlockedPattern', id),
+    blockMeetingByTitle: (title) => ipcRenderer.invoke('calendar:blockMeetingByTitle', title),
     onSyncComplete: (callback) => {
-      ipcRenderer.on('workiq:syncComplete', (_event, data) => callback(data));
+      ipcRenderer.on('calendar:syncComplete', (_event, data) => callback(data));
     },
     removeSyncCompleteListener: () => {
-      ipcRenderer.removeAllListeners('workiq:syncComplete');
+      ipcRenderer.removeAllListeners('calendar:syncComplete');
     },
   },
 

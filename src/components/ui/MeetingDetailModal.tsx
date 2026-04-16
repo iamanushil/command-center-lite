@@ -677,7 +677,7 @@ export function MeetingDetailModal({
                 Delete
               </button>
               {/* Show block option for synced meetings */}
-              {meeting.source === 'workiq' && onBlockMeetingTitle && (
+              {meeting.source === 'calendar' && onBlockMeetingTitle && (
                 <button
                   onClick={() => setShowBlockConfirm(true)}
                   className="px-4 py-2.5 rounded-lg text-yellow hover:bg-yellow/20 transition-colors cursor-pointer"

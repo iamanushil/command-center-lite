@@ -49,8 +49,8 @@ export function AppProvider({ children }: AppProviderProps) {
           ...(localTasks || []),
         ]
 
-        setTasks(allTasks.length > 0 ? allTasks : mockTasks)
-        setMeetings(allMeetings?.length > 0 ? allMeetings : mockMeetings)
+        setTasks(allTasks)
+        setMeetings(allMeetings || [])
       } catch (error) {
         console.error('Error loading data:', error)
       } finally {
@@ -88,7 +88,7 @@ export function AppProvider({ children }: AppProviderProps) {
     if (!task) return
 
     // Handle local tasks
-    if (isElectron() && window.electronAPI && task.source === 'local') {
+    if (isElectron() && window.electronAPI) {
       try {
         const updatedTask = await window.electronAPI.db.tasks.toggle(id)
         if (updatedTask) {
@@ -189,7 +189,7 @@ export function AppProvider({ children }: AppProviderProps) {
     if (!task) return
 
     // Handle local tasks - update in database
-    if (isElectron() && window.electronAPI && task.source === 'local') {
+    if (isElectron() && window.electronAPI) {
       try {
         const updatedTask = await window.electronAPI.db.tasks.update(id, { 
           status,
@@ -227,7 +227,7 @@ export function AppProvider({ children }: AppProviderProps) {
     if (!task || !title.trim()) return
 
     // Handle local tasks - update in database
-    if (isElectron() && window.electronAPI && task.source === 'local') {
+    if (isElectron() && window.electronAPI) {
       try {
         const updatedTask = await window.electronAPI.db.tasks.update(id, { title: title.trim() })
         
@@ -250,7 +250,7 @@ export function AppProvider({ children }: AppProviderProps) {
     if (!task) return
 
     // Handle local tasks - update in database
-    if (isElectron() && window.electronAPI && task.source === 'local') {
+    if (isElectron() && window.electronAPI) {
       try {
         const updatedTask = await window.electronAPI.db.tasks.update(id, { notes })
         
@@ -281,7 +281,7 @@ export function AppProvider({ children }: AppProviderProps) {
     if (!task) return
 
     // Handle local tasks - update in database
-    if (isElectron() && window.electronAPI && task.source === 'local') {
+    if (isElectron() && window.electronAPI) {
       try {
         const updatedTask = await window.electronAPI.db.tasks.update(id, { link })
         
@@ -312,7 +312,7 @@ export function AppProvider({ children }: AppProviderProps) {
     if (!task) return
 
     // Handle local tasks - update in database
-    if (isElectron() && window.electronAPI && task.source === 'local') {
+    if (isElectron() && window.electronAPI) {
       try {
         const updatedTask = await window.electronAPI.db.tasks.update(id, { dueDate })
         
@@ -469,7 +469,7 @@ export function AppProvider({ children }: AppProviderProps) {
     }
     try {
       const allMeetings = await window.electronAPI.db.meetings.getAll()
-      setMeetings(allMeetings?.length > 0 ? allMeetings : mockMeetings)
+      setMeetings(allMeetings || [])
     } catch (error) {
       console.error('Error refreshing meetings:', error)
     }
